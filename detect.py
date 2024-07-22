@@ -37,7 +37,26 @@ from pathlib import Path
 import torch
 import numpy as np
 from matplotlib.path import Path as pt
-from shapely.geometry import Polygon, Point
+
+# 判断目标是否在ROI区域内
+def box_in_roi(roi_cor, object_cor):
+    # 将 roi_cor 转换为 numpy 数组，确保格式正确
+    roi_path = pt(np.array(roi_cor))
+    
+    # 创建一个空数组来存储目标的各个角点
+    # 左上角，右上角，左下角，右下角
+    corners = np.array([
+        np.column_stack([object_cor[:, 0], object_cor[:, 1]]),  # 左上角
+        np.column_stack([object_cor[:, 2], object_cor[:, 1]]),  # 右上角
+        np.column_stack([object_cor[:, 0], object_cor[:, 3]]),  # 左下角
+        np.column_stack([object_cor[:, 2], object_cor[:, 3]])   # 右下角
+    ]).transpose(1, 0, 2)  # 重新排列以便每个对象有四个角点 (N, 4, 2)
+    
+    # 检查每个角点是否至少有一个在 ROI 内
+    for corner_set in corners:
+        if roi_path.contains_points(corner_set).any():
+            return True
+    return False
 
 # 分割铁道ROI区域，返回四个坐标点
 def lane_ROI_det(frame):
@@ -265,12 +284,8 @@ def run(
                 #  将检测框缩放回原图比例
                 det[:, :4] = scale_boxes(im.shape[2:], det[:, :4], im0.shape).round()
                 object_cor = det[:, :4].cpu().numpy()
-                center_x = (object_cor[0] + object_cor[2]) / 2
-                center_y = (object_cor[1] + object_cor[3]) / 2
-                center_point = np.array([center_x, center_y])
-                roi_path = Polygon(np.array(roi_corners))
                 # 判断检测目标是否在ROI区域内
-                if(roi_path.contains(center_point)):
+                if(box_in_roi(roi_corners, object_cor)):
                     print("铁道区域存在异常！")
                     abnormality = True  # 标记存在异常
                 else:
